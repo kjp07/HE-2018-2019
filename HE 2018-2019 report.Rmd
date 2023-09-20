@@ -1,5 +1,6 @@
 ---
 title: "Higher Education in 2018-2019"
+author: Kelsey Pearson
 output: html_document
 date: "2023-09-18"
 ---
@@ -7,15 +8,10 @@ date: "2023-09-18"
 ```{r setup, message=FALSE, warning=FALSE, echo=F}
 knitr::opts_chunk$set(echo = TRUE)
 
-install.packages(setdiff("pacman", rownames(installed.packages())))
-library("pacman")
+library(pacman)
 p_load(tidyr, readr, ggplot2, dplyr, lubridate, 
-       readxl, stringr,janitor, kbl, kableExtra, DT)
+       readxl, stringr, janitor, kbl, kableExtra, DT)
 ```
-
-## Business Intelligence Analyst
-
-###Pre-interview preparation
 
 To demonstrate some of the essential skills required for this role, candidates are asked to produce a piece of work for presentation at the interview. 
 
@@ -30,7 +26,6 @@ You should clearly note any assumptions you have made as part of the analysis.
 ## Number of Undergraduate and Postgraduate Taught students
 
 ```{r load-student-data, message=FALSE, warning=FALSE, echo=F}
-
 students = read_csv('data/student-ug-pg-(2018-19).csv', skip = 14, 
                     show_col_types = FALSE) %>% 
   clean_names()
@@ -47,7 +42,6 @@ Filter for following levels of study: All undergraduate; and Postgraduate (taugh
 Include all years of study, mode of study, and do not consider other categories such as sex or domicile
 
 ```{r distinct-categories, message=FALSE, warning=FALSE, echo=F}
-
 # Identify filters
 distinct_he = students %>% 
   distinct(he_provider)
@@ -81,7 +75,7 @@ ug_pg_students = students %>%
 ```
 
 ```{r plot-students, message=FALSE, echo=F}
-
+# Plot
 ug_pg_students %>% 
   ggplot(aes(x = reorder(he_provider, total), y = number, 
              group = level_of_study, fill = level_of_study)) + 
@@ -105,6 +99,7 @@ ug_pg_students %>%
 ```
 
 ```{r, message=FALSE, warning=FALSE, echo=F}
+# Table
 table_ug_pg_students = ug_pg_students %>% 
   select(he_provider,
          level_of_study,
@@ -121,9 +116,108 @@ table_ug_pg_students %>%
       caption = "Student population in 2018-2019 (sorted by Total)")
 ```
 
-`r table_ug_pg_students %>% filter(total == max(total)) %>% pull(he_provider)` has the largest student population with `r format(table_ug_pg_students %>% filter(total == max(total)) %>% pull(total), big.mark = ",")` students studying at Undergraduate level `(r format(table_ug_pg_students %>% filter(total == max(total)) %>% pull('All undergraduate'), big.mark = ","))` and in Postgraduate Taught coures `(r format(table_ug_pg_students %>% filter(total == max(total)) %>% pull('Postgraduate (taught)'), big.mark = ","))`.
+`r table_ug_pg_students %>% filter(total == max(total)) %>% pull(he_provider)` has the largest student population with `r format(table_ug_pg_students %>% filter(total == max(total)) %>% pull(total), big.mark = ",")` students studying at Undergraduate level (`r format(table_ug_pg_students %>% filter(total == max(total)) %>% pull('All undergraduate'), big.mark = ",")`) and in Postgraduate Taught coures (`r format(table_ug_pg_students %>% filter(total == max(total)) %>% pull('Postgraduate (taught)'), big.mark = ",")`).
 
-`r table_ug_pg_students %>% filter(total == min(total)) %>% pull(he_provider)` has the smallest student population with `r format(table_ug_pg_students %>% filter(total == min(total)) %>% pull(total), big.mark = ",")` students studying in Undergraduate level `(r format(table_ug_pg_students %>% filter(total == min(total)) %>% pull('All undergraduate'), big.mark = ","))` and in `Postgraduate Taught courses (r format(table_ug_pg_students %>% filter(total == min(total)) %>% pull('Postgraduate (taught)'), big.mark = ","))`.
+`r table_ug_pg_students %>% filter(total == min(total)) %>% pull(he_provider)` has the smallest student population with `r format(table_ug_pg_students %>% filter(total == min(total)) %>% pull(total), big.mark = ",")` students studying in Undergraduate level (`r format(table_ug_pg_students %>% filter(total == min(total)) %>% pull('All undergraduate'), big.mark = ",")`) and in Postgraduate Taught courses (`r format(table_ug_pg_students %>% filter(total == min(total)) %>% pull('Postgraduate (taught)'), big.mark = ",")`).
+
+## Ratio of students to staff ('SSR')
+
+Number of students per member of staff. Need to consider FTE, placements
+
+Assumptions and considerations:
+
+Undergraduate and postgraduate taught students in full-time education
+
+Academic staff, full time, non-atypical contract
+
+SSR calculation
+
+```{r load-staff-data, message=FALSE, warning=FALSE, echo=F}
+staff = read_csv('data/staff.csv', skip = 33, 
+                    show_col_types = FALSE) %>% 
+  clean_names()
+```
+
+```{r distinct-staff-categories, message=FALSE, warning=FALSE, echo=F}
+
+# Identify filters
+distinct_co_m = staff %>% 
+  distinct(contract_marker)
+
+distinct_ac_m = staff %>% 
+  distinct(academic_marker)
+
+distinct_at_m = staff %>% 
+  distinct(atypical_marker)
+
+distinct_moe = staff %>% 
+  distinct(mode_of_employment)
+
+distinct_activity = staff %>% 
+  distinct(activity_standard_occupational_classification)
+```
+
+```{r filter-staff, message=FALSE, warning=FALSE, echo=F}
+he_filter = c('The University of Aberdeen', 'The University of Edinburgh',
+              'The University of Glasgow', 'The University of Strathclyde',
+              'The University of St. Andrews')
+
+los_filter = c('Postgraduate (taught)', 'All undergraduate')
+
+# Filter dataset
+he_staff = staff %>% 
+  filter(academic_year == "2018/19") %>% 
+  filter(he_provider %in% he_filter) %>% 
+  filter(country_of_he_provider == "Scotland" & region_of_he_provider == "Scotland")
+```
+
+```{r all-staff, message=FALSE, warning=FALSE, echo=F}
+table_staff = he_staff %>% 
+  filter(mode_of_employment == "All" & academic_marker == "All") %>% 
+  summarise(total_staff = sum(number), .by = he_provider)
+
+table_staff %>% 
+  arrange(desc(total_staff)) %>% 
+  kbl(col.names = c("HE Provider", "Total"),
+      caption = "Staff levels in 2018-2019")
+```
+
+```{r ssr-staff, message=FALSE, warning=FALSE, echo=F}
+# SSR for all students and all staff
+table_ssr = table_ug_pg_students %>% 
+  left_join(table_staff, by = join_by(he_provider == he_provider)) %>% 
+  mutate(ssr = round(total / total_staff, digits = 2)) %>% 
+  select(he_provider, total, total_staff, ssr)
+
+table_ssr %>% 
+  arrange(ssr) %>% 
+  kbl(col.names = c("HE Provider", "Students", "Total Staff", "SSR"),
+      caption = "SSR when considering Undergraduate and Postgraduate taught students and all staff in 2018-2019")
+```
+
+```{r all_academic-staff, message=FALSE, warning=FALSE, echo=FALSE}
+# Student:Academic Staff Ratio
+table_academic_staff = he_staff %>% 
+  filter(activity_standard_occupational_classification == "Total academic staff"
+         | activity_standard_occupational_classification != "Total academic atypical staff") %>% 
+  filter(mode_of_employment == "Full-time") %>% 
+  distinct(number, he_provider, .keep_all = T) %>% 
+  select(he_provider, activity_standard_occupational_classification, number) %>% 
+  summarise(total_academic_staff = sum(number), .by = he_provider) %>% 
+  arrange(desc(total_academic_staff))
+
+table_sasr = table_ug_pg_students %>% 
+  left_join(table_academic_staff, by = join_by(he_provider == he_provider)) %>% 
+  mutate(ssr = round(total / total_academic_staff, digits = 2)) %>% 
+  select(he_provider, total, total_academic_staff, ssr)
+
+table_sasr %>% 
+  arrange(ssr) %>% 
+  kbl(col.names = c("HE Provider", "Students", "Academic staff", "SSR"),
+      caption = "SSR when considering Undergraduate and Postgraduate taught students in full-time education and full-time academic staff in 2018-2019")
+```
+
+`r table_sasr %>% filter(ssr == min(ssr)) %>% pull(he_provider)` has the smallest student to staff ratio, with an SSR of `r format(table_sasr %>% filter(ssr == min(ssr)) %>% pull(ssr))`. `r table_sasr %>% filter(ssr == max(ssr)) %>% pull(he_provider)` has the smallest student to staff ratio, with an SSR of `r format(table_sasr %>% filter(ssr == max(ssr)) %>% pull(ssr))`.
 
 ## Income to University per academic staff member
 
@@ -171,7 +265,7 @@ min_income = table_finance %>%
 
 The `r max_income_uni` had the largest income in 2018-2019, with an income of `r paste0("£", format(max_income, big.mark = ","))`.
 
-In the same year, the r min_income_uni had the smallest income with `r paste0("£", format(min_income, big.mark = ","))`. The `r paste0(max_income_uni, "'s")` income is `r round(max_income / min_income, digits = 1)` times greater than the r min_income_uni.
+In the same year, the r min_income_uni had the smallest income with `r paste0("£", format(min_income, big.mark = ","))`. The `r paste0(max_income_uni, "'s")` income is `r round(max_income / min_income, digits = 1)` times greater than the `r min_income_uni`.
 
 ```{r income-per-staff, message=FALSE, warning=FALSE, echo=F}
 
