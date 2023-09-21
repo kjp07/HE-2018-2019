@@ -1,0 +1,479 @@
+---
+title: "Higher Education in 2018-2019"
+author: "Kelsey Pearson"
+format: html
+self-contained: true
+editor: visual
+---
+
+```{r pre-setup, message=FALSE, warning=FALSE, echo=F}
+install.packages(setdiff("pacman", rownames(installed.packages())))
+library("pacman")
+p_load(tidyr, readr, ggplot2, dplyr, lubridate, 
+       readxl, stringr,janitor, kbl, kableExtra, DT)
+```
+
+This report shows how the University of Edinburgh compares with the University of Aberdeen, the University of Glasgow, the University of Strathclyde and the University of St Andrews in 2018-2019.
+
+The following topics are included:
+
+-   Number of Undergraduate and Postgraduate Taught students
+
+-   The ratio of students to staff ('SSR')
+
+-   Income to University per academic staff member
+
+## Data sources
+
+The data used in this report is available from the The Higher Education Statistics Agency (HESA) at <https://www.hesa.ac.uk/data-and-analysis>.
+
+Links to data:
+
+-   Student data: <https://www.hesa.ac.uk/data-and-analysis/students/table-1.csv>
+
+-   Staff data: <https://www.hesa.ac.uk/data-and-analysis/staff/table-1.csv>
+
+-   Finance data: <https://www.hesa.ac.uk/data-and-analysis/finances/table-1.csv>
+
+This report was made using R and the script can be found here:
+
+-   <https://github.com/kjp07/HE-2018-2019.git>
+
+## Number of Undergraduate and Postgraduate Taught students
+
+```{r load-student-data, message=FALSE, warning=FALSE, echo=F}
+
+students = read_csv('data/students.csv', skip = 14,
+                    show_col_types = FALSE) %>%
+  clean_names()
+```
+
+```{r distinct-categories, message=FALSE, warning=FALSE, echo=F}
+# Identify filters 
+distinct_he = students %>% 
+  distinct(he_provider)  
+
+distinct_los = students %>% 
+  distinct(level_of_study) 
+
+distinct_fym = students %>% 
+  distinct(first_year_marker)
+
+distinct_mos = students %>% 
+  distinct(mode_of_study) 
+```
+
+```{r filter-unis, message=FALSE, warning=FALSE, echo=F}
+
+he_filter = c('The University of Aberdeen', 'The University of Edinburgh',      
+              'The University of Glasgow', 'The University of Strathclyde',     
+              'The University of St. Andrews')
+
+los_filter = c('Postgraduate (taught)', 'All undergraduate') 
+
+# Filter dataset 
+ug_pg_students = students %>% 
+  filter(he_provider %in% he_filter) %>% 
+  filter(level_of_study %in% los_filter) %>% 
+  filter(first_year_marker == "All") %>%  
+  filter(mode_of_study == "All") %>% 
+  filter(category == "Total") %>% 
+  filter(country_of_he_provider == "Scotland" 
+         & region_of_he_provider == "Scotland") %>% 
+  mutate(total= sum(number), .by = he_provider)
+```
+
+```{r plot-students, message=FALSE, echo=F}
+ug_pg_students %>%    
+  ggplot(aes(x = reorder(he_provider, total),
+             y = number,
+             group = level_of_study,
+             fill = level_of_study)) +
+  geom_bar(stat = 'identity', position = position_dodge2(reverse = T)) +
+  geom_text(aes(label = format(number, big.mark = ','), 
+                x = reorder(he_provider, total)),
+            hjust = 0, colour = "black", fontface = "bold",
+            position = position_dodge2(.9, reverse = T), size = 3) +
+  labs(title = 'Number of students in Undergraduate and Postgraduate taught\ncourses in 2018-2019',
+       x = '', 
+       y = '') +
+  scale_x_discrete(labels = function(x) str_wrap(str_replace_all(x, "foo" , " "),
+                                                 width = 15)) +
+  scale_y_continuous(limits = c(NA, 25000)) + 
+  coord_flip() +
+  theme_minimal() +
+  theme(legend.position = 'bottom',
+        legend.title = element_blank(),
+        plot.margin = margin(r = 60)) 
+```
+
+```{r, message=FALSE, warning=FALSE, echo=F}
+table_ug_pg_students = ug_pg_students %>%  
+  select(he_provider, 
+         level_of_study, 
+         number) %>% 
+  pivot_wider(names_from = level_of_study, values_from = number) %>%   
+  mutate(total = rowSums(across(where(is.numeric)))) %>% 
+  arrange(desc(total))
+
+table_ug_pg_students %>%  
+  mutate(`Postgraduate (taught)` = format(`Postgraduate (taught)`, big.mark = ","),          `All undergraduate` = format(`All undergraduate`, big.mark = ","), 
+         total = format(total, big.mark = ",")) %>% 
+  kbl(col.names = c("HE Provider", 
+                    "Postgraduate (taught)", 
+                    "Undergraduate", "Total"),  
+      caption = "Number of students in Undergraduate and Postgraduate taught courses in 2018-2019") 
+```
+
+In 2018-2019, `r table_ug_pg_students %>% filter(total == max(total)) %>% pull(he_provider)` had the largest student population with `r format(table_ug_pg_students %>% filter(total == max(total)) %>% pull(total), big.mark = ",")` students. The University also had the largest number of students studying at Undergraduate and in Postgraduate taught courses, with `r format(table_ug_pg_students %>% filter(total == max(total)) %>% pull('All undergraduate'), big.mark = ",")` and `r format(table_ug_pg_students %>% filter(total == max(total)) %>% pull('Postgraduate (taught)'), big.mark = ",")` students respectively.
+
+In the same year, `r table_ug_pg_students %>% filter(total == min(total)) %>% pull(he_provider)` had the smallest student population with `r format(table_ug_pg_students %>% filter(total == min(total)) %>% pull(total), big.mark = ",")` students studying in Undergraduate level (`r format(table_ug_pg_students %>% filter(total == min(total)) %>% pull('All undergraduate'), big.mark = ",")`) and in Postgraduate Taught courses (`r format(table_ug_pg_students %>% filter(total == min(total)) %>% pull('Postgraduate (taught)'), big.mark = ",")`).
+
+## Ratio of students to staff ('SSR')
+
+Atypical staff are members of staff who contracts involve non-permenant working arrangements. This group has been excluded from the analysis below because of this.
+
+```{r load-staff-data, message=FALSE, warning=FALSE, echo=F}
+
+staff = read_csv('data/staff.csv', skip = 33, show_col_types = FALSE) %>%   
+  clean_names()
+```
+
+### All students and all staff (excluding atypical)
+
+```{r distinct-staff-categories, message=FALSE, warning=FALSE, echo=F}
+
+# Identify filters 
+distinct_co_m = staff %>% 
+  distinct(contract_marker)
+
+distinct_ac_m = staff %>%  
+  distinct(academic_marker) 
+
+distinct_at_m = staff %>%  
+  distinct(atypical_marker) 
+
+distinct_moe = staff %>% 
+  distinct(mode_of_employment) 
+
+distinct_activity = staff %>%  
+  distinct(activity_standard_occupational_classification)
+```
+
+```{r filter-staff, message=FALSE, warning=FALSE, echo=F}
+
+he_filter = c('The University of Aberdeen', 'The University of Edinburgh',      
+              'The University of Glasgow', 'The University of Strathclyde',       
+              'The University of St. Andrews') 
+
+los_filter = c('Postgraduate (taught)', 'All undergraduate') 
+
+# Filter dataset
+
+he_staff = staff %>%
+  filter(academic_year == "2018/19") %>% 
+  filter(he_provider %in% he_filter) %>% 
+  filter(country_of_he_provider == "Scotland" 
+         & region_of_he_provider == "Scotland")
+```
+
+```{r all-staff, message=FALSE, warning=FALSE, echo=F}
+
+table_staff = he_staff %>%
+  filter((activity_standard_occupational_classification == "Total academic staff"
+         | activity_standard_occupational_classification == "Total non-academic staff")
+         & atypical_marker == "Non-atypical"
+         & mode_of_employment == "All") %>% 
+  distinct(he_provider, activity_standard_occupational_classification, number,
+           .keep_all = F) %>% 
+  pivot_wider(names_from = activity_standard_occupational_classification, values_from = number) %>% 
+  mutate(total_staff = rowSums(across(where(is.numeric)))) %>% 
+  arrange(desc(total_staff))
+
+```
+
+```{r staff-points, message=FALSE, warning=FALSE, echo=F}
+# Items for text
+max_staff_uni = table_staff %>% 
+  filter(total_staff == max(total_staff)) %>% 
+  pull(he_provider) 
+
+max_staff = table_staff %>%  
+  filter(total_staff == max(total_staff)) %>% 
+  pull(total_staff) 
+
+min_staff_uni = table_staff %>%  
+  filter(total_staff == min(total_staff)) %>%  
+  pull(he_provider) 
+
+min_staff = table_staff %>% 
+  filter(total_staff == min(total_staff)) %>%  
+  pull(total_staff)
+```
+
+In 2018-2019, `r max_staff_uni` had the greatest number of staff members out of the five universities, with `r format(max_staff, big.mark = ",")` members of staff. `r min_staff_uni` had the smallest staff population with `r format(min_staff, big.mark = ",")`.
+
+```{r table-staff, include=FALSE, message=FALSE, warning=FALSE, echo=F}
+table_staff %>% 
+  arrange(desc(total_staff)) %>% 
+  kbl(col.names = c("HE Provider", "Total academic staff",
+                    "Total non-academic staff", "Total"), 
+      caption = "Staff levels in 2018-2019")
+```
+
+```{r all-students, message=FALSE, warning=FALSE, echo=F}
+all_students = students %>% 
+  filter(he_provider %in% he_filter) %>% 
+  filter(level_of_study == "All") %>% 
+  filter(first_year_marker == "All") %>%  
+  filter(mode_of_study == "All") %>% 
+  filter(category == "Total") %>% 
+  filter(country_of_he_provider == "Scotland" 
+         & region_of_he_provider == "Scotland") %>% 
+  select(he_provider,
+         students = number)
+
+max_students_uni = all_students %>% 
+  filter(students == max(students)) %>% 
+  pull(he_provider)
+
+max_students = all_students %>% 
+  filter(students == max(students)) %>% 
+  pull(students)
+
+min_students_uni = all_students %>% 
+  filter(students == min(students)) %>% 
+  pull(he_provider)
+
+min_students = all_students %>% 
+  filter(students == min(students)) %>% 
+  pull(students)
+
+```
+
+`r max_students_uni` also had the largest student body of the five universities, with `r format(max_students, big.mark = ",")` students. `r min_students_uni` had the smallest student population with `r format(min_students, big.mark = ",")`.
+
+```{r all-student-all-staff, message=FALSE, warning=FALSE, echo=F}
+# All students to all staff
+table_staff_counts = table_staff %>% select(he_provider, total_staff)
+
+table_ssr = all_students %>% 
+  left_join(table_staff_counts, by = join_by(he_provider == he_provider)) %>% 
+  mutate(ssr = round(students / total_staff, digits = 2))
+
+max_ssr_uni = table_ssr %>% 
+  filter(ssr == max(ssr)) %>% 
+  pull(he_provider)
+
+max_ssr = table_ssr %>% 
+  filter(ssr == max(ssr)) %>% 
+  pull(ssr)
+
+min_ssr_uni = table_ssr %>% 
+  filter(ssr == min(ssr)) %>% 
+  pull(he_provider)
+
+min_ssr = table_ssr %>% 
+  filter(ssr == min(ssr)) %>% 
+  pull(ssr)
+
+```
+
+However, `r max_ssr_uni` had the largest SSR with `r max_ssr` students per member of staff, whilst `r min_ssr_uni` had the smallest SSR, with `r min_ssr` students per member of staff.
+
+```{r show-all-ssr, message=FALSE, warning=FALSE, echo=F}
+table_ssr %>% 
+  mutate(students = format(students, big.mark = ","),
+         total_staff = format(total_staff, big.mark = ",")) %>% 
+  arrange(ssr) %>% 
+  kbl(col.names = c("HE Provider", "Students", "Staff", "SSR"),
+      caption = "SSR when considering all students and all staff (excluding atypical) in 2018-2019")
+```
+
+### All students to all full-time academic staff (excluding atypical)
+
+Full-time academic staff may have the greatest interaction with students compared with part-time academic staff. The analysis below considers all students and full-time academic staff (excluding atypical).
+
+```{r all_students-academic-staff, message=FALSE, warning=FALSE, echo=FALSE}
+# Student:Academic Staff Ratio
+table_academic_staff = he_staff %>% 
+  filter(activity_standard_occupational_classification == "Total academic staff" 
+         & activity_standard_occupational_classification != "Total academic atypical staff") %>%  
+  filter(mode_of_employment == "Full-time"
+         & contract_marker == "Academic") %>%
+  summarise(total_academic_staff = sum(number), .by = he_provider) %>% 
+  arrange(desc(total_academic_staff)) 
+
+table_sasr = all_students %>% 
+  left_join(table_academic_staff, by = join_by(he_provider == he_provider)) %>%   
+  mutate(ssr = round(students / total_academic_staff, digits = 2))
+
+# Points for texts
+max_sasr_uni = table_sasr %>% 
+  filter(ssr == max(ssr)) %>% 
+  pull(he_provider)
+
+max_sasr = table_sasr %>% 
+  filter(ssr == max(ssr)) %>% 
+  pull(ssr)
+
+min_sasr_uni = table_sasr %>% 
+  filter(ssr == min(ssr)) %>% 
+  pull(he_provider)
+
+min_sasr = table_sasr %>% 
+  filter(ssr == min(ssr)) %>% 
+  pull(ssr)
+
+```
+
+`r paste0(min_sasr_uni, "'s")` has the smallest student to academic staff ratio, with `r min_sasr` students per academic staff member. This is approximately half the SSR of the `r paste0(max_sasr_uni, "'s")` SSR, which is has the largest SSR with `r max_sasr` students per academic staff member. 
+
+```{r graph-students-academic-staff, message=FALSE, warning=FALSE, echo=FALSE}
+
+table_sasr %>% 
+  arrange(ssr) %>% 
+  mutate(highlight = ifelse(he_provider == "The University of Edinburgh", "yes", "no")) %>% 
+  ggplot(aes(x = reorder(he_provider, ssr), 
+             y = ssr,
+             fill = highlight)) +
+  geom_col() +
+  geom_text(aes(label = paste0(ssr), 
+                x = reorder(he_provider, ssr)),
+            vjust = -0.5, size = 3, 
+            fontface = "bold") +
+  scale_x_discrete(labels = function(x)
+    str_wrap(str_replace_all(x, "foo" , " "), 
+             width = 15)) +
+  scale_fill_manual(values = c("yes" = "darkgreen", "no" = "chocolate", guide = F)) +
+  labs(title = "Student to Academic Staff Ratio for five Scottish universities in 2018-2019",
+       x = "",
+       y = "Students per academic staff member") +
+  theme_minimal() +
+  theme(plot.margin = margin(r = 60),
+        legend.position = "none") 
+```
+
+
+```{r table-students-academic-staff, message=FALSE, warning=FALSE, echo=FALSE}
+
+table_sasr %>%  
+  mutate(students = format(students, big.mark = ","),
+         total_academic_staff = format(total_academic_staff, big.mark = ",")) %>% 
+  arrange(ssr) %>% 
+  kbl(col.names = c("HE Provider", "Students", "Academic staff", "SSR"),       
+      caption = "SSR when considering all students and full-time academic staff in 2018-2019")
+```
+
+
+## Income to University per academic staff member
+
+```{r load-finance, message=FALSE, warning=FALSE, echo=F}
+
+finance = read_csv('data/finances.csv', skip = 12,                  
+                   show_col_types = FALSE) %>%    clean_names() %>%
+  mutate(value_000s = as.numeric(value_000s))
+```
+
+```{r filter-finance, message=FALSE, warning=FALSE, echo=F}
+# Filter dataset
+table_finance = finance %>% 
+  filter(academic_year == "2018/19") %>%
+  filter(he_provider %in% he_filter) %>% 
+  filter(country_of_he_provider == "Scotland" 
+         & region_of_he_provider == "Scotland") %>%
+  filter(category_marker == "Income"     
+         & category == "Total income"
+         & year_end_month == "All") %>%
+  select(he_provider, total_income = value_000s) %>% 
+  mutate(total_income_curr = format(total_income, big.mark = ","))
+
+# Items for text
+max_income_uni = table_finance %>% 
+  filter(total_income == max(total_income)) %>% 
+  pull(he_provider) 
+
+max_income = table_finance %>%  
+  filter(total_income == max(total_income)) %>% 
+  pull(total_income) 
+
+min_income_uni = table_finance %>%  
+  filter(total_income == min(total_income)) %>%  
+  pull(he_provider) 
+
+min_income = table_finance %>% 
+  filter(total_income == min(total_income)) %>%  
+  pull(total_income) 
+```
+
+```{r income-per-academic-staff, message=FALSE, warning=FALSE, echo=F}
+
+table_income_per_staff = table_academic_staff %>% 
+  left_join(table_finance, by = join_by(he_provider == he_provider)) %>%
+  mutate(income_per_staff = round(total_income / total_academic_staff, digits = 2)) %>% 
+  arrange(desc(income_per_staff)) 
+
+# Items for text
+max_income_staff_uni = table_income_per_staff %>% 
+  filter(total_income == max(total_income)) %>% 
+  pull(he_provider) 
+
+max_income_staff = table_income_per_staff %>%  
+  filter(total_income == max(total_income)) %>% 
+  pull(income_per_staff) 
+
+min_income_staff_uni = table_income_per_staff %>%  
+  filter(total_income == min(total_income)) %>%  
+  pull(he_provider) 
+
+min_income_staff = table_income_per_staff %>% 
+  filter(total_income == min(total_income)) %>%  
+  pull(income_per_staff) 
+```
+
+
+In 2018-2019, `r max_income_uni` had the largest income (`r paste0("£", format(max_income, big.mark = ","))`) and `r paste0("£", format(max_income_staff, big.mark = ","))` per academic staff member.
+
+Compared to `r min_income_uni` had the smallest income (`r paste0("£", format(min_income, big.mark = ","))`) and `r paste0("£", format(max_income_staff, big.mark = ","))` per full-time academic staff member. `r paste0(max_income_uni, "'s")` income is nearly `r round(max_income / min_income, digits = 0)` times greater than `r paste0(min_income_uni, "'s")` income. 
+
+However, there's a difference of `r paste0("£", format(max_income_staff - min_income_staff, big.mark = ","))` between the full-time academic staff at `r max_income_uni` and `r min_income_uni`.
+
+
+
+```{r income-per-staff, message=FALSE, warning=FALSE, echo=F}
+
+table_income_per_staff %>%  
+  select(-total_income) %>% 
+  mutate(total_academic_staff = format(total_academic_staff, big.mark = ","),   
+         total_income_curr = paste0("£", total_income_curr),      
+         income_per_staff = paste0("£", income_per_staff)) %>% 
+  kbl(col.names = c("HE Provider", 
+                    "Academic staff",
+                    "Total income", 
+                    "Income per academic staff member"),
+      caption = "Income per academic staff member in 2018-2019\n(sorted by income per academic staff member)")
+```
+
+```{r income-per-staff-graph, message=FALSE, warning=FALSE, echo=F}
+table_income_per_staff %>% 
+  mutate(highlight = ifelse(he_provider == "The University of Edinburgh", "yes", "no")) %>% 
+  arrange(income_per_staff) %>% 
+  ggplot(aes(x = reorder(he_provider, income_per_staff), 
+             y = income_per_staff,
+             fill = highlight)) +
+  geom_col() +
+  geom_text(aes(label = paste0("£", income_per_staff), 
+                x = reorder(he_provider, income_per_staff)),
+            vjust = -0.5, size = 3,
+            fontface = "bold") +
+  scale_x_discrete(labels = function(x) 
+    str_wrap(str_replace_all(x, "foo" , " "), 
+             width = 15)) +
+  scale_fill_manual(values = c("yes" = "darkgreen", "no" = "chocolate", guide = F)) +
+  labs(title = "University incomes per academic staff member for five\nScottish universities in 2018-2019",
+       x = "",
+       y = "Income per academic staff member (£)") +
+  theme_minimal() +
+  theme(plot.margin = margin(r = 60),
+        legend.position = "none") 
+```
