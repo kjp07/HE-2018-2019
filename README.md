@@ -15,5 +15,6 @@ Links to data:
 
 * Finance data: https://www.hesa.ac.uk/data-and-analysis/finances/table-1.csv
 
+Data in this repository has been filtered due to large file sizes (this applies to students.csv and finances.csv)
 
 
